@@ -468,16 +468,11 @@ function createTokenBucket({ capacity, refillIntervalMs }: { capacity: number; r
 
 export default app;
 
-const maybeStartServer = () => {
-  const isEntrypoint = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
-  if (!isEntrypoint) {
-    return;
-  }
-
+const startServer = () => {
   const port = Number(process.env.PORT || 3001);
   app.listen(port, '0.0.0.0', () => {
-    console.log(`Mastering server listening on port ${port}`);
+    console.log(`Server is running and listening on 0.0.0.0:${port}`);
   });
 };
 
-maybeStartServer();
+startServer();
