@@ -474,9 +474,9 @@ const maybeStartServer = () => {
     return;
   }
 
-  const port = Number(process.env.MASTERING_SERVER_PORT ?? 3001);
-  app.listen(port, () => {
-    console.log(`Mastering server listening on http://localhost:${port}`);
+  const port = Number(process.env.PORT || 3001);
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`Mastering server listening on port ${port}`);
   });
 };
 
