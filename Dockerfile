@@ -7,9 +7,9 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# 依存関係インストール
+# 依存関係インストール（dev も含めて全部）
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install
 
 # アプリ本体
 COPY . .
@@ -17,7 +17,7 @@ COPY . .
 ENV PYTHON_BIN=python3
 ENV PORT=8080
 
-# フロントのビルド（必要なら）
+# フロントのビルド
 RUN npm run server:build
 
 # Cloud Run 起動コマンド
