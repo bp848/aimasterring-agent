@@ -1,0 +1,24 @@
+FROM node:20-bullseye
+
+# Python3 + ffmpeg
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 依存関係インストール
+COPY package*.json ./
+RUN npm install --omit=dev
+
+# アプリ本体
+COPY . .
+
+ENV PYTHON_BIN=python3
+ENV PORT=8080
+
+# フロントのビルド（必要なら）
+RUN npm run server:build
+
+# Cloud Run 起動コマンド
+CMD ["npm", "run", "server:start"]
