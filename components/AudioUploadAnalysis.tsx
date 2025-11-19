@@ -45,6 +45,9 @@ const AudioUploadAnalysis: React.FC<AudioUploadAnalysisProps> = ({ onAnalysisCom
       const data = await response.json();
 
       if (!response.ok) {
+        if (data.command) {
+          onLog('info', 'CLI command issued', data.command);
+        }
         throw new Error(data.details || data.error || 'Unknown server error');
       }
 
@@ -112,8 +115,8 @@ const AudioUploadAnalysis: React.FC<AudioUploadAnalysisProps> = ({ onAnalysisCom
           <div className="mt-10 pt-8 border-t border-gray-700">
             <h3 className="text-2xl font-bold text-green-400 mb-6">初期分析結果:</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <MetricsDisplay title="現状（分析結果）" metrics={analysisResult} colorClass="text-orange-300" />
-                <MetricsDisplay title="目標（配信: streaming 想定）" metrics={TARGET_METRICS} colorClass="text-green-300" />
+                <MetricsDisplay label="現状（分析結果）" metrics={analysisResult} />
+                <MetricsDisplay label="目標（配信: streaming 想定）" metrics={TARGET_METRICS} />
             </div>
             <button
               onClick={handleProceedToDashboard}

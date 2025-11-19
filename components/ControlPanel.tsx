@@ -80,7 +80,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       {masteredMetrics && (
         <div className="mt-8">
           <h4 className="text-xl font-bold text-green-400 mb-4">マスタリング結果:</h4>
-          <MetricsDisplay title="シミュレーション後" metrics={masteredMetrics} colorClass="text-green-300" />
+          <MetricsDisplay label="シミュレーション後" metrics={masteredMetrics} />
           
           {/* NEW: Audio Playback Section */}
           {(initialAudioUrl || masteredAudioUrl) && (

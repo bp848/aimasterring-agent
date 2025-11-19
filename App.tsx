@@ -5,11 +5,7 @@ import MasteringPrescription from './components/MasteringPrescription';
 import ControlPanel from './components/ControlPanel';
 import AudioUploadAnalysis from './components/AudioUploadAnalysis';
 import { ActionConsole, LogEntry } from './components/ActionConsole';
-import {
-  DEFAULT_INITIAL_METRICS,
-  TARGET_METRICS,
-  MASTERING_PRESCRIPTION,
-} from './constants';
+import { DEFAULT_INITIAL_METRICS, TARGET_METRICS, MASTERING_PRESCRIPTION } from './constants';
 import type { AudioMetrics, MasteringParameters } from './types';
 
 const App: React.FC = () => {
@@ -61,7 +57,12 @@ const App: React.FC = () => {
     setInitialMetrics(metrics);
     setUploadedAudioFile(file);
     setHasAnalyzed(true);
-    addLog('success', 'Analysis complete. Metrics received.', file ? `File: ${file.name}` : undefined);
+    addLog('success', 'Audio analysis completed successfully.');
+    addLog(
+      'info',
+      'Measurement captured.',
+      `LUFS=${metrics.lufs?.toFixed(1) ?? 'N/A'}, TruePeak=${metrics.truePeak?.toFixed(1) ?? 'N/A'}, Crest=${metrics.crest?.toFixed(1) ?? 'N/A'}`,
+    );
   };
 
   const currentDifferenceMetrics: AudioMetrics = {
@@ -86,14 +87,18 @@ const App: React.FC = () => {
                 オーディオ分析: 現状と目標
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <MetricsDisplay title="現状（分析結果）" metrics={initialMetrics} colorClass="text-orange-300" />
-                <MetricsDisplay title="目標（配信: streaming 想定）" metrics={TARGET_METRICS} colorClass="text-green-300" />
-                <MetricsDisplay title="差分所見" metrics={currentDifferenceMetrics} colorClass="text-purple-300" />
+                <MetricsDisplay label="現状（分析結果）" metrics={hasAnalyzed ? initialMetrics : null} />
+                <MetricsDisplay label="目標（ストリーミング想定）" metrics={TARGET_METRICS} />
+                <MetricsDisplay label="差分所見" metrics={currentDifferenceMetrics} />
               </div>
             </section>
 
             <section className="mb-12">
-              <MasteringPrescription prescription={MASTERING_PRESCRIPTION} />
+              <MasteringPrescription
+                prescription={MASTERING_PRESCRIPTION}
+                currentMetrics={initialMetrics}
+                onLog={addLog}
+              />
             </section>
 
             <section>

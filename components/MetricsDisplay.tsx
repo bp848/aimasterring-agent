@@ -1,53 +1,60 @@
 import React from 'react';
-import { AudioMetrics } from '../types';
+import { Activity, BarChart3, Zap } from 'lucide-react';
+import type { AudioMetrics } from '../types';
 
 interface MetricsDisplayProps {
-  title: string;
-  metrics: AudioMetrics;
-  colorClass?: string;
+  metrics: AudioMetrics | null;
+  label: string;
 }
 
-const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ title, metrics, colorClass = 'text-gray-200' }) => {
+export const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ metrics, label }) => {
+  if (!metrics) {
+    return (
+      <div className="bg-gray-900 p-6 rounded-xl border border-gray-800 animate-pulse">
+        <h3 className="text-gray-400 mb-4">{label} (Measuring...)</h3>
+        <div className="space-y-4">
+          <div className="h-4 bg-gray-800 rounded w-3/4" />
+          <div className="h-4 bg-gray-800 rounded w-1/2" />
+          <div className="h-4 bg-gray-800 rounded w-full" />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300 border border-gray-700">
-      <h3 className={`text-xl font-semibold mb-4 ${colorClass}`}>{title}</h3>
-      <ul className="space-y-2 text-sm">
-        <li className="flex justify-between">
-          <span className="font-medium text-gray-400">LUFS:</span>
-          <span className="text-blue-300 font-bold">
-            {metrics.lufs !== null ? `${metrics.lufs.toFixed(1)}` : 'N/A'}
-          </span>
-        </li>
-        <li className="flex justify-between">
-          <span className="font-medium text-gray-400">True Peak (dBTP):</span>
-          <span className="text-blue-300 font-bold">
-            {metrics.truePeak !== null ? `${metrics.truePeak.toFixed(1)}` : 'N/A'}
-          </span>
-        </li>
-        <li className="flex justify-between">
-          <span className="font-medium text-gray-400">Crest Factor (dB):</span>
-          <span className="text-blue-300 font-bold">
-            {metrics.crest !== null ? `${metrics.crest.toFixed(1)}` : 'N/A'}
-          </span>
-        </li>
-        {metrics.sampleRate && (
-          <li className="flex justify-between">
-            <span className="font-medium text-gray-400">Sample Rate:</span>
-            <span className="text-gray-300">{metrics.sampleRate} kHz</span>
-          </li>
-        )}
-        {metrics.bitDepth && (
-          <li className="flex justify-between">
-            <span className="font-medium text-gray-400">Bit Depth:</span>
-            <span className="text-gray-300">{metrics.bitDepth}</span>
-          </li>
-        )}
-        {metrics.notes && (
-          <li className="pt-2 text-xs text-gray-500 italic">
-            {metrics.notes}
-          </li>
-        )}
-      </ul>
+    <div className="bg-gray-900 p-6 rounded-xl border border-gray-800 shadow-lg transition-all hover:border-gray-700">
+      <h3 className="text-gray-400 mb-4 font-semibold tracking-wider text-xs uppercase">{label}</h3>
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-black/50 p-3 rounded-lg border border-gray-800">
+          <div className="flex items-center gap-2 text-blue-400 mb-1">
+            <Activity size={16} />
+            <span className="text-xs">LUFS (Int)</span>
+          </div>
+          <div className="text-xl font-bold font-mono">{metrics.lufs?.toFixed(1) ?? '--'} dB</div>
+        </div>
+
+        <div className="bg-black/50 p-3 rounded-lg border border-gray-800">
+          <div className="flex items-center gap-2 text-purple-400 mb-1">
+            <BarChart3 size={16} />
+            <span className="text-xs">True Peak</span>
+          </div>
+          <div
+            className={`text-xl font-bold font-mono ${
+              metrics.truePeak !== null && metrics.truePeak !== undefined && metrics.truePeak > -1 ? 'text-red-500' : ''
+            }`}
+          >
+            {metrics.truePeak?.toFixed(1) ?? '--'} dB
+          </div>
+        </div>
+
+        <div className="bg-black/50 p-3 rounded-lg border border-gray-800">
+          <div className="flex items-center gap-2 text-yellow-400 mb-1">
+            <Zap size={16} />
+            <span className="text-xs">Crest Factor</span>
+          </div>
+          <div className="text-xl font-bold font-mono">{metrics.crest?.toFixed(1) ?? '--'} dB</div>
+        </div>
+      </div>
     </div>
   );
 };
