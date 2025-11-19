@@ -37,6 +37,7 @@ const App: React.FC = () => {
     params: MasteringParameters,
     finalMetrics: AudioMetrics,
     newMasteredAudioUrl: string | null,
+    meta?: { usedMockResult: boolean; reason?: string },
   ) => {
     setIsLoading(false);
     setMasteredMetrics(finalMetrics);
@@ -50,9 +51,13 @@ const App: React.FC = () => {
       `EQ (高域): ${params.eqHighHz} Hzで ${params.eqHighDb} dB, Q: ${params.eqHighQ}`,
       `リミッタ: Ceiling ${params.limiterCeilingDb} dBTP, Lookahead: ${params.limiterLookaheadMs} ms, リリース: ${params.limiterReleaseMs} ms`,
       `目標LUFS: ${params.targetLufs}`,
-      'マスタリングプロセスが完了しました！',
+      meta?.usedMockResult ? '⚠️ バックエンド失敗によりモック結果を表示しています。' : 'マスタリングプロセスが完了しました！',
     ]);
-    addLog('success', 'Mastering simulation completed successfully.');
+    if (meta?.usedMockResult) {
+      addLog('error', 'バックエンドマスタリングに失敗したためモック結果を表示します。', meta.reason);
+    } else {
+      addLog('success', 'Mastering simulation completed successfully.');
+    }
   };
 
   const handleInitialAnalysisComplete = (metrics: AudioMetrics, file: File | null) => {
@@ -113,6 +118,7 @@ const App: React.FC = () => {
                 initialMetrics={initialMetrics}
                 initialAudioFile={uploadedAudioFile}
                 masteredAudioUrl={masteredAudioUrl}
+                onLog={addLog}
               />
             </section>
           </>

@@ -14,10 +14,18 @@ export interface StartMasteringOptions {
   platformId?: string;
 }
 
+export interface MasteringResult {
+  params: MasteringParameters;
+  finalMetrics: AudioMetrics;
+  masteredAudioUrl: string | null;
+  meta: {
+    usedMockResult: boolean;
+    reason?: string;
+  };
+}
+
 export interface UseAiMasteringAgentResult {
-  startMasteringSimulation: (
-    options: StartMasteringOptions
-  ) => Promise<{ params: MasteringParameters; finalMetrics: AudioMetrics; masteredAudioUrl: string | null }>;
+  startMasteringSimulation: (options: StartMasteringOptions) => Promise<MasteringResult>;
   statusMessage: string | null;
   errorMessage: string | null;
 }
@@ -29,9 +37,7 @@ export const useAiMasteringAgent = (): UseAiMasteringAgentResult => {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const startMasteringSimulation = async (
-    options: StartMasteringOptions,
-  ): Promise<{ params: MasteringParameters; finalMetrics: AudioMetrics; masteredAudioUrl: string | null }> => {
+  const startMasteringSimulation = async (options: StartMasteringOptions): Promise<MasteringResult> => {
     if (!options?.initialMetrics) {
       throw new Error('initialMetrics is required to start mastering.');
     }
@@ -58,11 +64,13 @@ export const useAiMasteringAgent = (): UseAiMasteringAgentResult => {
     }
 
     if (!options.originalFile) {
-      setErrorMessage('元音源ファイルが見つからないため、バックエンド連携をスキップしました。');
+      const reason = '元音源ファイルが見つからないため、バックエンド連携をスキップしました。';
+      setErrorMessage(reason);
       return {
         params,
         finalMetrics: MOCKED_FINAL_METRICS,
         masteredAudioUrl: MOCKED_MASTERED_AUDIO_URL,
+        meta: { usedMockResult: true, reason },
       };
     }
 
@@ -84,14 +92,18 @@ export const useAiMasteringAgent = (): UseAiMasteringAgentResult => {
         params: { ...params, masteredAudioUrl },
         finalMetrics,
         masteredAudioUrl,
+        meta: { usedMockResult: false },
       };
     } catch (error) {
       console.error('バックエンドマスタリングに失敗しました。', error);
-      setErrorMessage('バックエンドマスタリングに失敗したためモック結果を表示します。');
+      const reason =
+        (error instanceof Error && error.message) || 'バックエンドマスタリングに失敗したためモック結果を表示します。';
+      setErrorMessage(reason);
       return {
         params,
         finalMetrics: MOCKED_FINAL_METRICS,
         masteredAudioUrl: MOCKED_MASTERED_AUDIO_URL,
+        meta: { usedMockResult: true, reason },
       };
     }
   };

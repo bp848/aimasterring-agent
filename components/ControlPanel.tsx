@@ -3,17 +3,24 @@ import { AudioMetrics, MasteringParameters } from '../types';
 import LoadingSpinner from './LoadingSpinner';
 import MetricsDisplay from './MetricsDisplay';
 import { TARGET_METRICS } from '../constants';
-import { useAiMasteringAgent } from '../hooks/useAiMasteringAgent'; // <-- NEW IMPORT
+import { useAiMasteringAgent } from '../hooks/useAiMasteringAgent';
+import type { MasteringResult } from '../hooks/useAiMasteringAgent';
 
 interface ControlPanelProps {
   onMasteringStart: () => void;
-  onMasteringComplete: (params: MasteringParameters, finalMetrics: AudioMetrics, masteredAudioUrl: string | null) => void;
+  onMasteringComplete: (
+    params: MasteringParameters,
+    finalMetrics: AudioMetrics,
+    masteredAudioUrl: string | null,
+    meta: MasteringResult['meta'],
+  ) => void;
   isLoading: boolean;
   masteredMetrics: AudioMetrics | null;
   simulationLog: string[];
   initialMetrics: AudioMetrics;
-  initialAudioFile: File | null; // NEW: Original uploaded audio file
-  masteredAudioUrl: string | null; // NEW: URL for the mastered audio
+  initialAudioFile: File | null;
+  masteredAudioUrl: string | null;
+  onLog?: (type: 'info' | 'success' | 'error' | 'process', message: string, details?: string) => void;
 }
 
 const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -23,24 +30,31 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   masteredMetrics,
   simulationLog,
   initialMetrics,
-  initialAudioFile, // NEW
-  masteredAudioUrl, // NEW
+  initialAudioFile,
+  masteredAudioUrl,
+  onLog,
 }) => {
-  const { startMasteringSimulation, statusMessage, errorMessage } = useAiMasteringAgent(); // <-- USE THE HOOK
+  const { startMasteringSimulation, statusMessage, errorMessage } = useAiMasteringAgent();
 
-  const handleStartSimulation = async () => { // <-- MADE ASYNC
+  const handleStartSimulation = async () => {
     onMasteringStart();
     try {
-      const { params, finalMetrics, masteredAudioUrl: masteredUrl } = await startMasteringSimulation({
+      const { params, finalMetrics, masteredAudioUrl: masteredUrl, meta } = await startMasteringSimulation({
         initialMetrics,
         targetMetrics: TARGET_METRICS,
         originalFile: initialAudioFile,
         platformId: 'streaming',
       });
-      onMasteringComplete(params, finalMetrics, masteredUrl); // <-- PASS masteredAudioUrl
+      if (meta?.usedMockResult) {
+        onLog?.('error', 'バックエンドマスタリングに失敗したためモック結果を表示します。', meta.reason);
+      } else {
+        onLog?.('success', 'バックエンドマスタリングが正常に完了しました。');
+      }
+      onMasteringComplete(params, finalMetrics, masteredUrl, meta);
     } catch (error) {
-      console.error("Mastering simulation failed:", error);
-      // 必要に応じてUIでエラー状態を処理することもできます
+      console.error('Mastering simulation failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      onLog?.('error', 'Mastering simulation failed unexpectedly.', message);
     }
   };
 

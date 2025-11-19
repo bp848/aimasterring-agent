@@ -42,16 +42,34 @@ const AudioUploadAnalysis: React.FC<AudioUploadAnalysisProps> = ({ onAnalysisCom
         method: 'POST',
         body: formData,
       });
-      const data = await response.json();
 
-      if (!response.ok) {
-        if (data.command) {
-          onLog('info', 'CLI command issued', data.command);
+      const contentType = response.headers.get('content-type') ?? '';
+      const rawBody = await response.text();
+      const tryParseJson = (): any => {
+        try {
+          return JSON.parse(rawBody);
+        } catch {
+          return null;
         }
-        throw new Error(data.details || data.error || 'Unknown server error');
+      };
+      const parsed: any = tryParseJson();
+      if (!parsed && rawBody.trim().startsWith('<')) {
+        onLog('error', 'Server returned HTML instead of JSON.', rawBody.slice(0, 400));
       }
 
-      const metrics: AudioMetrics = data.metrics;
+      if (!response.ok) {
+        if (parsed?.command) {
+          onLog('info', 'CLI command issued', parsed.command);
+        }
+        const details = parsed?.details || parsed?.error || rawBody || 'Unknown server error';
+        throw new Error(details);
+      }
+
+      const metrics: AudioMetrics | undefined = parsed?.metrics;
+      if (!metrics) {
+        throw new Error(parsed ? JSON.stringify(parsed) : 'Server response missing metrics');
+      }
+
       setAnalysisResult(metrics);
       onLog('success', 'Server processed audio successfully.');
       onLog('info', `Result: LUFS=${metrics.lufs}, Peak=${metrics.truePeak}`);
