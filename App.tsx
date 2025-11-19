@@ -17,6 +17,8 @@ const App: React.FC = () => {
   const [uploadedAudioFile, setUploadedAudioFile] = useState<File | null>(null);
   const [masteredAudioUrl, setMasteredAudioUrl] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(false);
+  const [isConsoleVisible, setIsConsoleVisible] = useState(true);
 
   const addLog = (type: LogEntry['type'], message: string, details?: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -116,9 +118,24 @@ const App: React.FC = () => {
           </>
         )}
       </main>
-      <div className="fixed bottom-0 w-full z-50">
-        <ActionConsole logs={logs} />
-      </div>
+      {isConsoleVisible ? (
+        <div className="fixed bottom-0 w-full z-50">
+          <ActionConsole
+            logs={logs}
+            isCollapsed={isConsoleCollapsed}
+            onCollapseToggle={() => setIsConsoleCollapsed((prev) => !prev)}
+            onClose={() => setIsConsoleVisible(false)}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setIsConsoleVisible(true)}
+          className="fixed bottom-4 right-4 z-50 px-4 py-2 rounded bg-green-600 text-white shadow-lg hover:bg-green-500 transition"
+        >
+          Open Console
+        </button>
+      )}
     </div>
   );
 };
