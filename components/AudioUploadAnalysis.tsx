@@ -9,6 +9,8 @@ interface AudioUploadAnalysisProps {
   onLog: (type: 'info' | 'success' | 'error' | 'process', message: string, details?: string) => void;
 }
 
+const MAX_UPLOAD_BYTES = 32 * 1024 * 1024; // Cloud Run request limit (~32 MB)
+
 const AudioUploadAnalysis: React.FC<AudioUploadAnalysisProps> = ({ onAnalysisComplete, onLog }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -17,8 +19,16 @@ const AudioUploadAnalysis: React.FC<AudioUploadAnalysisProps> = ({ onAnalysisCom
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
-      setSelectedFile(event.target.files[0]);
+      const file = event.target.files[0];
       setAnalysisResult(null); // ファイルが変更されたら結果をリセット
+      if (file.size > MAX_UPLOAD_BYTES) {
+        const message = `ファイルサイズ ${(file.size / (1024 * 1024)).toFixed(2)} MB は Cloud Run の制限 (32 MB) を超えています。`;
+        setSelectedFile(null);
+        setError(message);
+        onLog('error', 'File rejected because it exceeds the Cloud Run upload limit.', message);
+        return;
+      }
+      setSelectedFile(file);
       setError(null);
     }
   };
@@ -26,6 +36,15 @@ const AudioUploadAnalysis: React.FC<AudioUploadAnalysisProps> = ({ onAnalysisCom
   const handleAnalyzeClick = async () => {
     if (!selectedFile) {
       setError('オーディオファイルを選択してください。');
+      return;
+    }
+    if (selectedFile.size > MAX_UPLOAD_BYTES) {
+      setError('ファイルが大きすぎるためアップロードできません。（32 MB 以下にしてください）');
+      onLog(
+        'error',
+        'Upload aborted because file exceeded Cloud Run limit.',
+        `Size ${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`,
+      );
       return;
     }
 
