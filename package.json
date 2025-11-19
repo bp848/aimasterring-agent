@@ -14,17 +14,16 @@
     "qa:smoke": "node scripts/qa-smoke.mjs"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.17.3",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "lucide-react": "^0.554.0",
-    "multer": "^2.0.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/express": "^5.0.5",
-    "@types/multer": "^2.0.0",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "ts-node": "^10.9.2",

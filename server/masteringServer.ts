@@ -1,11 +1,12 @@
 import 'dotenv/config';
 import express from 'express';
-import multer from 'multer';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
-// import { pathToFileURL } from 'node:url'; // 不要なので削除済み
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { Storage } from '@google-cloud/storage';
 import { z } from 'zod';
 import type { AudioMetrics, MasteringParameters } from '../types';
 
@@ -17,6 +18,9 @@ interface MasteringJob {
   createdAt: string;
   updatedAt: string;
   fileName: string;
+  sourceUrl?: string;
+  remoteOutputObject?: string | null;
+  masteredAudioExpiresAt?: string | null;
   finalMetrics: AudioMetrics | null;
   masteredAudioUrl: string | null;
   error?: string;
@@ -29,14 +33,101 @@ const OUTPUT_DIR = path.join(cwd, 'tmp', 'outputs');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-const upload = multer({ dest: UPLOAD_DIR });
+const storage = new Storage({
+  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS || undefined,
+});
+
+const UPLOAD_BUCKET = process.env.UPLOAD_BUCKET ?? 'ai-mastering-uploads';
+const UPLOAD_PREFIX = process.env.UPLOAD_PREFIX ?? 'uploads';
+const OUTPUT_PREFIX = process.env.OUTPUT_PREFIX ?? 'outputs';
+const SIGNED_UPLOAD_TTL_SECONDS = Number(process.env.UPLOAD_SIGNED_URL_TTL ?? 600);
+const SIGNED_DOWNLOAD_TTL_SECONDS = Number(process.env.DOWNLOAD_SIGNED_URL_TTL ?? 86_400);
+const MAX_UPLOAD_BYTES = Number(process.env.UPLOAD_MAX_BYTES ?? 536_870_912); // 512 MB
+const ALLOWED_EXTENSIONS = (process.env.ALLOWED_UPLOAD_EXTENSIONS ?? '.wav,.wave,.aiff,.aif,.mp3,.flac')
+  .split(',')
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+
 const app = express();
 app.use(express.json({ limit: '2mb' }));
-app.use('/static', express.static(OUTPUT_DIR));
 
 const pythonBinary = process.env.PYTHON_BIN ?? 'python3';
 const cliPath = path.join(cwd, 'python', 'mastering_cli.py');
 const jobStore = new Map<string, MasteringJob>();
+
+const ensureAllowedExtension = (filename: string): string => {
+  const ext = path.extname(filename).toLowerCase();
+  if (!ext) {
+    throw new Error('ファイル拡張子が指定されていません。');
+  }
+  if (!ALLOWED_EXTENSIONS.includes(ext)) {
+    throw new Error(`サポートされていないファイル拡張子です: ${ext}`);
+  }
+  return ext;
+};
+
+const inferExtensionFromUrl = (url: string): string => {
+  const sanitized = url.split('?')[0];
+  const ext = path.extname(sanitized).toLowerCase();
+  if (ext && ALLOWED_EXTENSIONS.includes(ext)) {
+    return ext;
+  }
+  return '.wav';
+};
+
+const parseGcsUri = (uri: string): { bucketName: string; objectName: string } => {
+  const withoutScheme = uri.slice('gs://'.length);
+  const slashIndex = withoutScheme.indexOf('/');
+  if (slashIndex === -1) {
+    throw new Error(`gs:// URI が不正です: ${uri}`);
+  }
+  return {
+    bucketName: withoutScheme.slice(0, slashIndex),
+    objectName: withoutScheme.slice(slashIndex + 1),
+  };
+};
+
+const downloadRemoteFile = async (sourceUrl: string): Promise<{ localPath: string }> => {
+  const ext = inferExtensionFromUrl(sourceUrl);
+  const localPath = path.join(UPLOAD_DIR, `remote-${crypto.randomUUID()}${ext}`);
+
+  if (sourceUrl.startsWith('gs://')) {
+    const { bucketName, objectName } = parseGcsUri(sourceUrl);
+    await storage.bucket(bucketName).file(objectName).download({ destination: localPath });
+    return { localPath };
+  }
+
+  const response = await fetch(sourceUrl);
+  if (!response.ok) {
+    throw new Error(`リモートファイルのダウンロードに失敗しました: HTTP ${response.status}`);
+  }
+  const body = response.body;
+  if (!body) {
+    throw new Error('リモートファイルのレスポンスが空でした。');
+  }
+  await pipeline(Readable.fromWeb(body as any), fs.createWriteStream(localPath));
+  return { localPath };
+};
+
+const uploadMasteredFile = async (localPath: string, jobId: string) => {
+  const destination = `${OUTPUT_PREFIX}/${jobId}.wav`;
+  await storage.bucket(UPLOAD_BUCKET).upload(localPath, {
+    destination,
+    resumable: false,
+    contentType: 'audio/wav',
+  });
+  const expires = Date.now() + SIGNED_DOWNLOAD_TTL_SECONDS * 1000;
+  const [signedUrl] = await storage
+    .bucket(UPLOAD_BUCKET)
+    .file(destination)
+    .getSignedUrl({ version: 'v4', action: 'read', expires });
+
+  return {
+    objectUrl: `gs://${UPLOAD_BUCKET}/${destination}`,
+    signedUrl,
+    expiresAt: new Date(expires).toISOString(),
+  };
+};
 
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -46,13 +137,80 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-app.post('/api/analyze', upload.single('file'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'オーディオファイルが必要です。' });
+const uploadUrlRequestSchema = z.object({
+  filename: z.string().min(1),
+  contentType: z.string().min(1),
+  fileSize: z.number().int().positive(),
+});
+
+const sourceUrlSchema = z
+  .string()
+  .min(1)
+  .refine((value) => value.startsWith('gs://') || value.startsWith('https://'), {
+    message: 'sourceUrl は gs:// または https:// である必要があります。',
+  });
+
+app.post('/api/upload-url', async (req, res) => {
+  const parseResult = uploadUrlRequestSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'リクエスト形式が不正です。', details: parseResult.error.flatten() });
   }
 
+  const { filename, contentType, fileSize } = parseResult.data;
+  if (fileSize > MAX_UPLOAD_BYTES) {
+    return res
+      .status(400)
+      .json({ error: `ファイルサイズが上限(${(MAX_UPLOAD_BYTES / 1024 / 1024).toFixed(0)} MB)を超えています。` });
+  }
+
+  let ext: string;
   try {
-    const { stdout } = await execPythonCli(['analyze', req.file.path]);
+    ext = ensureAllowedExtension(filename);
+  } catch (error) {
+    return res.status(400).json({ error: (error as Error).message });
+  }
+
+  const objectKey = `${UPLOAD_PREFIX}/${crypto.randomUUID()}${ext}`;
+  const expires = Date.now() + SIGNED_UPLOAD_TTL_SECONDS * 1000;
+
+  try {
+    const [uploadUrl] = await storage
+      .bucket(UPLOAD_BUCKET)
+      .file(objectKey)
+      .getSignedUrl({
+        version: 'v4',
+        action: 'write',
+        expires,
+        contentType,
+      });
+
+    return res.json({
+      uploadUrl,
+      objectUrl: `gs://${UPLOAD_BUCKET}/${objectKey}`,
+      publicUrl: `https://storage.googleapis.com/${UPLOAD_BUCKET}/${objectKey}`,
+      expiresAt: new Date(expires).toISOString(),
+    });
+  } catch (error) {
+    console.error('Failed to create signed upload URL:', error);
+    return res.status(500).json({ error: '署名付きURLの生成に失敗しました。' });
+  }
+});
+
+const analyzeRequestSchema = z.object({
+  sourceUrl: sourceUrlSchema,
+});
+
+app.post('/api/analyze', async (req, res) => {
+  const parseResult = analyzeRequestSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'リクエスト形式が不正です。', details: parseResult.error.flatten() });
+  }
+
+  let localFilePath: string | undefined;
+  try {
+    const downloadResult = await downloadRemoteFile(parseResult.data.sourceUrl);
+    localFilePath = downloadResult.localPath;
+    const { stdout } = await execPythonCli(['analyze', localFilePath]);
     const metrics = parseMetricsJson(stdout)?.metrics;
 
     if (!metrics) {
@@ -69,30 +227,28 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
     return res.status(500).json({
       error: '音声解析プロセスでエラーが発生しました。',
       details: errorMessage,
-      command: `${pythonBinary} ${cliPath} analyze ${req.file.filename}`,
+      command: `${pythonBinary} ${cliPath} analyze <downloaded>`,
     });
   } finally {
-    cleanupTempFile(req.file.path);
+    cleanupTempFile(localFilePath);
   }
 });
 
-app.post('/api/master', upload.single('file'), async (req, res) => {
-  if (!req.file || typeof req.body?.params !== 'string') {
-    cleanupTempFile(req.file?.path ?? '');
-    return res.status(400).json({ error: 'file と params が必要です。' });
+const masterRequestSchema = z.object({
+  sourceUrl: sourceUrlSchema,
+  params: masteringParamsSchema,
+  originalFileName: z.string().optional(),
+});
+
+app.post('/api/master', async (req, res) => {
+  const parseResult = masterRequestSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'リクエスト形式が不正です。', details: parseResult.error.flatten() });
   }
 
-  let params: MasteringParameters;
-  try {
-    params = JSON.parse(req.body.params) as MasteringParameters;
-  } catch (error) {
-    cleanupTempFile(req.file.path);
-    return res.status(400).json({ error: 'params が JSON ではありません。' });
-  }
-
+  const { sourceUrl, params, originalFileName } = parseResult.data;
   const jobId = crypto.randomUUID();
   const outputFilename = `${jobId}.wav`;
-  const outputPath = path.join(OUTPUT_DIR, outputFilename);
 
   const now = new Date().toISOString();
   const job: MasteringJob = {
@@ -100,13 +256,21 @@ app.post('/api/master', upload.single('file'), async (req, res) => {
     status: 'queued',
     createdAt: now,
     updatedAt: now,
-    fileName: req.file.originalname,
+    fileName: originalFileName ?? 'remote-source',
+    sourceUrl,
     finalMetrics: null,
     masteredAudioUrl: null,
+    remoteOutputObject: null,
+    masteredAudioExpiresAt: null,
   };
   jobStore.set(jobId, job);
 
-  startMasteringJob(jobId, req.file.path, outputPath, params, outputFilename);
+  startMasteringJob({
+    jobId,
+    sourceUrl,
+    outputFilename,
+    params,
+  });
 
   return res.status(202).json({ jobId, status: job.status });
 });
@@ -183,72 +347,59 @@ app.post('/api/mastering-params', async (req, res) => {
   }
 });
 
-function startMasteringJob(
-  jobId: string,
-  inputPath: string,
-  outputPath: string,
-  params: MasteringParameters,
-  outputFilename: string,
-) {
-  const job = jobStore.get(jobId);
-  if (!job) {
-    return;
-  }
-  job.status = 'processing';
-  job.updatedAt = new Date().toISOString();
+interface MasteringJobInput {
+  jobId: string;
+  sourceUrl: string;
+  outputFilename: string;
+  params: MasteringParameters;
+}
 
-  const cliArgs = buildMasterArgs(inputPath, outputPath, params);
-  const child = spawn(pythonBinary, cliArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+function startMasteringJob({ jobId, sourceUrl, outputFilename, params }: MasteringJobInput) {
+  void (async () => {
+    let localInputPath: string | undefined;
+    let localOutputPath: string | undefined;
+    try {
+      const job = jobStore.get(jobId);
+      if (!job) {
+        return;
+      }
+      job.status = 'processing';
+      job.updatedAt = new Date().toISOString();
 
-  let stdout = '';
-  let stderr = '';
-  let cleaned = false;
+      const downloadResult = await downloadRemoteFile(sourceUrl);
+      localInputPath = downloadResult.localPath;
+      localOutputPath = path.join(OUTPUT_DIR, outputFilename);
 
-  const cleanupOnce = () => {
-    if (!cleaned) {
-      cleaned = true;
-      cleanupTempFile(inputPath);
-    }
-  };
-
-  child.stdout.on('data', (chunk) => {
-    stdout += chunk.toString();
-  });
-
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk.toString();
-  });
-  child.on('error', (error) => {
-    cleanupOnce();
-    const currentJob = jobStore.get(jobId);
-    if (!currentJob) {
-      return;
-    }
-    currentJob.status = 'error';
-    currentJob.error = `mastering_cli 起動に失敗しました: ${error.message}`;
-    currentJob.stderr = stderr.slice(-800);
-    currentJob.updatedAt = new Date().toISOString();
-  });
-
-  child.on('close', (code) => {
-    cleanupOnce();
-    const currentJob = jobStore.get(jobId);
-    if (!currentJob) {
-      return;
-    }
-    currentJob.updatedAt = new Date().toISOString();
-    if (code !== 0) {
-      currentJob.status = 'error';
-      currentJob.error = 'mastering_cli がエラーで終了しました。';
+      const { stdout, stderr } = await runMasteringCli(localInputPath, localOutputPath, params);
+      const currentJob = jobStore.get(jobId);
+      if (!currentJob) {
+        return;
+      }
+      const parsed = parseMetricsJson(stdout);
       currentJob.stderr = stderr.slice(-800);
-      return;
-    }
+      currentJob.finalMetrics = parsed?.finalMetrics ?? parsed?.metrics ?? null;
 
-    const parsed = parseMetricsJson(stdout);
-    currentJob.finalMetrics = parsed?.finalMetrics ?? parsed?.metrics ?? null;
-    currentJob.masteredAudioUrl = `/static/${outputFilename}?t=${Date.now()}`;
-    currentJob.status = 'completed';
-  });
+      const uploadResult = await uploadMasteredFile(localOutputPath, jobId);
+      currentJob.masteredAudioUrl = uploadResult.signedUrl;
+      currentJob.masteredAudioExpiresAt = uploadResult.expiresAt;
+      currentJob.remoteOutputObject = uploadResult.objectUrl;
+      currentJob.status = 'completed';
+      currentJob.updatedAt = new Date().toISOString();
+    } catch (error) {
+      const job = jobStore.get(jobId);
+      if (job) {
+        job.status = 'error';
+        job.error = error instanceof Error ? error.message : String(error);
+        if ((error as any)?.stderr) {
+          job.stderr = String((error as any).stderr).slice(-800);
+        }
+        job.updatedAt = new Date().toISOString();
+      }
+    } finally {
+      cleanupTempFile(localInputPath);
+      cleanupTempFile(localOutputPath);
+    }
+  })();
 }
 
 async function execPythonCli(args: string[]): Promise<{ stdout: string; stderr: string }> {
@@ -268,6 +419,42 @@ async function execPythonCli(args: string[]): Promise<{ stdout: string; stderr: 
         const error = new Error(`CLI exited with code ${code}`);
         (error as any).stderr = stderr;
         return reject(error);
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+async function runMasteringCli(
+  inputPath: string,
+  outputPath: string,
+  params: MasteringParameters,
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const cliArgs = buildMasterArgs(inputPath, outputPath, params);
+    const child = spawn(pythonBinary, cliArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      const wrapped = new Error(`mastering_cli 起動に失敗しました: ${error.message}`);
+      (wrapped as any).stderr = stderr;
+      reject(wrapped);
+    });
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        const err = new Error('mastering_cli がエラーで終了しました。');
+        (err as any).stderr = stderr;
+        return reject(err);
       }
       resolve({ stdout, stderr });
     });

@@ -10,8 +10,8 @@ import {
 export interface StartMasteringOptions {
   initialMetrics: AudioMetrics;
   targetMetrics?: AudioMetrics;
-  originalFile?: File | null;
   platformId?: string;
+  sourceUrl: string;
 }
 
 export interface MasteringResult {
@@ -41,6 +41,9 @@ export const useAiMasteringAgent = (): UseAiMasteringAgentResult => {
     if (!options?.initialMetrics) {
       throw new Error('initialMetrics is required to start mastering.');
     }
+    if (!options.sourceUrl) {
+      throw new Error('sourceUrl is required to start mastering.');
+    }
 
     setErrorMessage(null);
     const platform = resolvePlatform(options.platformId);
@@ -63,20 +66,9 @@ export const useAiMasteringAgent = (): UseAiMasteringAgentResult => {
       params = normalizeParams(MOCKED_AI_MASTERING_PARAMS, platform);
     }
 
-    if (!options.originalFile) {
-      const reason = '元音源ファイルが見つからないため、バックエンド連携をスキップしました。';
-      setErrorMessage(reason);
-      return {
-        params,
-        finalMetrics: MOCKED_FINAL_METRICS,
-        masteredAudioUrl: MOCKED_MASTERED_AUDIO_URL,
-        meta: { usedMockResult: true, reason },
-      };
-    }
-
     setStatusMessage('Python マスタリングエンジンでジョブを起動しています...');
     try {
-      const backendResult = await callMasteringBackend(params, options.originalFile, setStatusMessage);
+      const backendResult = await callMasteringBackend(params, options.sourceUrl, setStatusMessage);
       const finalMetrics: AudioMetrics = backendResult.finalMetrics ?? MOCKED_FINAL_METRICS;
       const masteredAudioUrl: string | null = backendResult.masteredAudioUrl ?? MOCKED_MASTERED_AUDIO_URL;
 
@@ -163,17 +155,14 @@ const resolvePlatform = (value?: string): MasteringParameters['platform'] => {
 
 const callMasteringBackend = async (
   params: MasteringParameters,
-  originalFile: File,
+  sourceUrl: string,
   onProgress?: (message: string | null) => void,
 ): Promise<{ masteredAudioUrl: string | null; finalMetrics: AudioMetrics | null }> => {
-  const formData = new FormData();
-  formData.append('file', originalFile);
-  formData.append('params', JSON.stringify(params));
-
-  onProgress?.('ファイルをアップロード中...');
+  onProgress?.('音源URLを送信しています...');
   const response = await fetch(MASTERING_JOB_ENDPOINT, {
     method: 'POST',
-    body: formData,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceUrl, params }),
   });
   if (!response.ok) {
     const errorText = await response.text();

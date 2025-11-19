@@ -12,6 +12,8 @@ dist
 dist-server
 dist-ssr
 *.local
+*.service-account.json
+aisanbo-9b966c50a4a9.json
 
 # Editor directories and files
 .vscode/*

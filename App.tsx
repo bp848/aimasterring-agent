@@ -3,7 +3,7 @@ import Navbar from './components/Navbar';
 import MetricsDisplay from './components/MetricsDisplay';
 import MasteringPrescription from './components/MasteringPrescription';
 import ControlPanel from './components/ControlPanel';
-import AudioUploadAnalysis from './components/AudioUploadAnalysis';
+import AudioUploadAnalysis, { UploadedSource } from './components/AudioUploadAnalysis';
 import { ActionConsole, LogEntry } from './components/ActionConsole';
 import { DEFAULT_INITIAL_METRICS, TARGET_METRICS, MASTERING_PRESCRIPTION } from './constants';
 import type { AudioMetrics, MasteringParameters } from './types';
@@ -17,6 +17,7 @@ const App: React.FC = () => {
   const [initialMetrics, setInitialMetrics] = useState<AudioMetrics>(DEFAULT_INITIAL_METRICS);
   const [uploadedAudioFile, setUploadedAudioFile] = useState<File | null>(null);
   const [masteredAudioUrl, setMasteredAudioUrl] = useState<string | null>(null);
+  const [remoteSource, setRemoteSource] = useState<UploadedSource | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(false);
   const [isConsoleVisible, setIsConsoleVisible] = useState(true);
@@ -69,10 +70,11 @@ const App: React.FC = () => {
     }
   };
 
-  const handleInitialAnalysisComplete = (metrics: AudioMetrics, file: File | null) => {
+  const handleInitialAnalysisComplete = (metrics: AudioMetrics, file: File | null, remote: UploadedSource) => {
     setInitialMetrics(metrics);
     setUploadedAudioFile(file);
     setHasAnalyzed(true);
+    setRemoteSource(remote);
     addLog('success', 'Audio analysis completed successfully.');
     addLog(
       'info',
@@ -135,10 +137,11 @@ const App: React.FC = () => {
                   simulationLog={simulationLog}
                   initialMetrics={initialMetrics}
                   initialAudioFile={uploadedAudioFile}
-                  masteredAudioUrl={masteredAudioUrl}
-                  masteringMeta={masteringMeta}
-                  onLog={addLog}
-                />
+                masteredAudioUrl={masteredAudioUrl}
+                masteringMeta={masteringMeta}
+                sourceUrl={remoteSource?.objectUrl ?? null}
+                onLog={addLog}
+              />
               ) : (
                 <div className="bg-gray-800/80 border border-gray-800 rounded-2xl p-8 h-full flex flex-col justify-center text-center shadow-lg">
                   <h3 className="text-2xl font-bold text-blue-300 mb-4">右カラム: マスタリング操作</h3>

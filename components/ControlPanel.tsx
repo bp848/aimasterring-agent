@@ -21,6 +21,7 @@ interface ControlPanelProps {
   initialAudioFile: File | null;
   masteredAudioUrl: string | null;
   masteringMeta: MasteringResult['meta'] | null;
+  sourceUrl: string | null;
   onLog?: (type: 'info' | 'success' | 'error' | 'process', message: string, details?: string) => void;
 }
 
@@ -34,18 +35,25 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   initialAudioFile,
   masteredAudioUrl,
   masteringMeta,
+  sourceUrl,
   onLog,
 }) => {
   const { startMasteringSimulation, statusMessage, errorMessage } = useAiMasteringAgent();
 
   const handleStartSimulation = async () => {
+    if (!sourceUrl) {
+      setTimeout(() => {
+        onLog?.('error', 'ソースURLが見つかりません。', 'もう一度解析を実行してからマスタリングを開始してください。');
+      }, 0);
+      return;
+    }
     onMasteringStart();
     try {
       const { params, finalMetrics, masteredAudioUrl: masteredUrl, meta } = await startMasteringSimulation({
         initialMetrics,
         targetMetrics: TARGET_METRICS,
-        originalFile: initialAudioFile,
         platformId: 'streaming',
+        sourceUrl,
       });
       if (meta?.usedMockResult) {
         onLog?.('error', 'バックエンドマスタリングに失敗したためモック結果を表示します。', meta.reason);
@@ -72,12 +80,17 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
       <div className="flex items-center justify-center mb-6">
         <button
           onClick={handleStartSimulation}
-          disabled={isLoading || !initialAudioFile} // Disable if no file uploaded
+          disabled={isLoading || !initialAudioFile || !sourceUrl}
           className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-full text-lg shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105"
         >
           {isLoading ? 'マスタリング中...' : 'AIマスタリングシミュレーションを開始'}
         </button>
       </div>
+      {!sourceUrl && (
+        <p className="text-xs text-yellow-400 text-center -mt-4 mb-4">
+          解析済みのソース URL が見つかりません。再度 Step 1 でアップロード &amp; 解析を実行してください。
+        </p>
+      )}
 
       {statusMessage && (
         <p className="text-sm text-blue-300 text-center mb-4">{statusMessage}</p>
