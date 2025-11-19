@@ -468,14 +468,16 @@ function createTokenBucket({ capacity, refillIntervalMs }: { capacity: number; r
 export default app;
 
 const startServer = () => {
-  console.log('Starting server...');
-  console.log('Env PORT:', process.env.PORT);
+  console.log('--- SERVER STARTING ---');
+  console.log('ENV PORT:', process.env.PORT);
 
-  const port = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 8080;
-  console.log(`Attempting to listen on port: ${port}`);
+  const port = process.env.PORT ? Number(process.env.PORT) : 8080;
+  const host = '0.0.0.0';
 
-  app.listen(port, '0.0.0.0', () => {
-    console.log(`SUCCESS: Server is running on http://0.0.0.0:${port}`);
+  console.log(`Attempting to bind to http://${host}:${port}`);
+
+  app.listen(port, host, () => {
+    console.log(`✅ SERVER RUNNING: Listening on http://${host}:${port}`);
   });
 };
 
