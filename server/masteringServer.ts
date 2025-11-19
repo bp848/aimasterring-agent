@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
-import type { AudioMetrics, MasteringParameters } from '../types';
+import type { AudioMetrics, MasteringParameters } from '../types.js';
 
 type JobStatus = 'queued' | 'processing' | 'completed' | 'error';
 
