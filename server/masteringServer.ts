@@ -5,8 +5,9 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
+// import { pathToFileURL } from 'node:url'; // 不要なので削除済み
 import { z } from 'zod';
-import type { AudioMetrics, MasteringParameters } from '../types.js';
+import type { AudioMetrics, MasteringParameters } from '../types';
 
 type JobStatus = 'queued' | 'processing' | 'completed' | 'error';
 
@@ -331,7 +332,7 @@ const cleanupTempFile = (filePath?: string) => {
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash-exp';
 
 const SYSTEM_PROMPT = [
-  'You are a professional mastering engineer following the user\'s A/B/C specification:',
+  "You are a professional mastering engineer following the user's A/B/C specification:",
   'A) Apply an input trim around -1.5 dB before any saturation to keep transient safety.',
   'B) Use a wideband RMS compressor (ratio ≈1.6:1, threshold around -13 dBFS, attack 12 ms, release 80 ms) for 1.5–2 dB GR.',
   'C) Optional gentle shelves: 120 Hz about -0.8 dB (Q 0.7) and 3.5 kHz about +0.6 dB (Q 0.7).',
@@ -467,11 +468,18 @@ function createTokenBucket({ capacity, refillIntervalMs }: { capacity: number; r
 
 export default app;
 
+// ------------------------------------------------------------
+//  サーバー起動処理 (Cloud Run対応版)
+// ------------------------------------------------------------
 const startServer = () => {
   console.log('--- SERVER STARTING ---');
   console.log('ENV PORT:', process.env.PORT);
 
+  // Cloud Runはポート番号を環境変数PORTで渡してくるため、それを優先する。
+  // なければ 8080 (Cloud Runのデフォルト) を使う。
   const port = process.env.PORT ? Number(process.env.PORT) : 8080;
+  
+  // 重要: コンテナ外からアクセスできるように '0.0.0.0' でリッスンする
   const host = '0.0.0.0';
 
   console.log(`Attempting to bind to http://${host}:${port}`);
