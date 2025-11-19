@@ -470,13 +470,24 @@ export default app;
 
 // フロントエンドの配信設定
 const frontendDist = path.join(cwd, 'dist');
+
 if (fs.existsSync(frontendDist)) {
+  console.log('Serving static files from:', frontendDist);
+
+  // 静的ファイル（JS, CSS, 画像など）を先に配信
   app.use(express.static(frontendDist));
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(frontendDist, 'index.html'));
+
+  // API以外のすべてのGETリクエストに対して index.html を返す (SPA対応)
+  // 注意: Express 5.0 の app.get('*') エラーを回避するため、app.use で処理します
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      res.sendFile(path.join(frontendDist, 'index.html'));
+    } else {
+      next();
+    }
   });
 } else {
-  console.warn('WARNING: Frontend build directory (dist) not found.');
+  console.warn('WARNING: Frontend build directory (dist) not found. UI will not be served.');
 }
 
 // ------------------------------------------------------------
