@@ -18,6 +18,9 @@ ENV PYTHON_BIN=python3
 ENV PORT=8080
 
 # フロントのビルド
+RUN npm run build
+
+# サーバーのビルド
 RUN npm run server:build
 
 # Cloud Run 起動コマンド

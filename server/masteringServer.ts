@@ -468,6 +468,17 @@ function createTokenBucket({ capacity, refillIntervalMs }: { capacity: number; r
 
 export default app;
 
+// フロントエンドの配信設定
+const frontendDist = path.join(cwd, 'dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+} else {
+  console.warn('WARNING: Frontend build directory (dist) not found.');
+}
+
 // ------------------------------------------------------------
 //  サーバー起動処理 (Cloud Run対応版)
 // ------------------------------------------------------------
