@@ -1,21 +1,19 @@
 import React, { useState } from 'react';
 import { AudioMetrics } from '../types';
-import { useAudioAnalyzerAgent } from '../hooks/useAudioAnalyzerAgent';
 import LoadingSpinner from './LoadingSpinner';
 import MetricsDisplay from './MetricsDisplay';
-import { TARGET_METRICS } from '../constants'; // 目標メトリクスは引き続き定数から取得
+import { TARGET_METRICS } from '../constants';
 
 interface AudioUploadAnalysisProps {
-  onAnalysisComplete: (metrics: AudioMetrics, file: File | null) => void; // MODIFIED: now passes the file
+  onAnalysisComplete: (metrics: AudioMetrics, file: File | null) => void;
+  onLog: (type: 'info' | 'success' | 'error' | 'process', message: string, details?: string) => void;
 }
 
-const AudioUploadAnalysis: React.FC<AudioUploadAnalysisProps> = ({ onAnalysisComplete }) => {
+const AudioUploadAnalysis: React.FC<AudioUploadAnalysisProps> = ({ onAnalysisComplete, onLog }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AudioMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const { analyzeAudio } = useAudioAnalyzerAgent();
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
@@ -33,13 +31,32 @@ const AudioUploadAnalysis: React.FC<AudioUploadAnalysisProps> = ({ onAnalysisCom
 
     setIsLoading(true);
     setError(null);
+    onLog('process', `Uploading file: ${selectedFile.name} (${(selectedFile.size / 1024 / 1024).toFixed(2)} MB)`);
+    onLog('process', 'Sending to analysis server...');
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
 
     try {
-      const metrics = await analyzeAudio(selectedFile);
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.details || data.error || 'Unknown server error');
+      }
+
+      const metrics: AudioMetrics = data.metrics;
       setAnalysisResult(metrics);
+      onLog('success', 'Server processed audio successfully.');
+      onLog('info', `Result: LUFS=${metrics.lufs}, Peak=${metrics.truePeak}`);
     } catch (err) {
       console.error('Audio analysis failed:', err);
+      const message = err instanceof Error ? err.message : String(err);
       setError('分析中にエラーが発生しました。もう一度お試しください。');
+      onLog('error', 'Audio analysis failed.', message);
     } finally {
       setIsLoading(false);
     }
@@ -47,7 +64,8 @@ const AudioUploadAnalysis: React.FC<AudioUploadAnalysisProps> = ({ onAnalysisCom
 
   const handleProceedToDashboard = () => {
     if (analysisResult) {
-      onAnalysisComplete(analysisResult, selectedFile); // MODIFIED: now passes selectedFile
+      onLog('process', 'Transitioning to mastering dashboard.');
+      onAnalysisComplete(analysisResult, selectedFile);
     }
   };
 

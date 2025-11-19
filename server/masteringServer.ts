@@ -54,13 +54,23 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
   try {
     const { stdout } = await execPythonCli(['analyze', req.file.path]);
     const metrics = parseMetricsJson(stdout)?.metrics;
+
     if (!metrics) {
-      throw new Error('測定結果を解析できませんでした。');
+      throw new Error(`解析結果の読み込みに失敗しました: ${stdout}`);
     }
     return res.json({ metrics });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Analysis CLI failed:', error);
-    return res.status(500).json({ error: '音声解析に失敗しました。' });
+    const errorMessage =
+      (typeof error === 'object' && error !== null && 'stderr' in error && (error as any).stderr) ||
+      (error as Error)?.message ||
+      '不明なエラーが発生しました';
+
+    return res.status(500).json({
+      error: '音声解析プロセスでエラーが発生しました。',
+      details: errorMessage,
+      command: `${pythonBinary} ${cliPath} analyze ${req.file.filename}`,
+    });
   } finally {
     cleanupTempFile(req.file.path);
   }
