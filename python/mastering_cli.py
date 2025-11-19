@@ -116,7 +116,8 @@ def render_master(args: argparse.Namespace) -> None:
 
 def build_filter_chain(args: argparse.Namespace) -> str:
     filters: List[str] = []
-    if args.input_trim_db := getattr(args, "input_trim_db", None):
+    args.input_trim_db = getattr(args, "input_trim_db", None)
+    if args.input_trim_db:
         if abs(float(args.input_trim_db)) > 0.01:
             filters.append(f"volume={float(args.input_trim_db):.3f}dB")
 
