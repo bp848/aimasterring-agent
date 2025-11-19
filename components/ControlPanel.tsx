@@ -20,6 +20,7 @@ interface ControlPanelProps {
   initialMetrics: AudioMetrics;
   initialAudioFile: File | null;
   masteredAudioUrl: string | null;
+  masteringMeta: MasteringResult['meta'] | null;
   onLog?: (type: 'info' | 'success' | 'error' | 'process', message: string, details?: string) => void;
 }
 
@@ -32,6 +33,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   initialMetrics,
   initialAudioFile,
   masteredAudioUrl,
+  masteringMeta,
   onLog,
 }) => {
   const { startMasteringSimulation, statusMessage, errorMessage } = useAiMasteringAgent();
@@ -59,6 +61,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   };
 
   const initialAudioUrl = initialAudioFile ? URL.createObjectURL(initialAudioFile) : null;
+  const isMockedResult = masteringMeta?.usedMockResult ?? false;
+  const shouldShowMasteredAudio = Boolean(masteredAudioUrl && !isMockedResult);
 
 
   return (
@@ -97,7 +101,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           <MetricsDisplay label="シミュレーション後" metrics={masteredMetrics} />
           
           {/* NEW: Audio Playback Section */}
-          {(initialAudioUrl || masteredAudioUrl) && (
+          {(initialAudioUrl || shouldShowMasteredAudio || isMockedResult) && (
             <div className="mt-8 pt-8 border-t border-gray-700">
               <h4 className="text-xl font-bold text-blue-400 mb-4">前後の音を聞く:</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -107,13 +111,27 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                     <audio controls src={initialAudioUrl} className="w-full"></audio>
                   </div>
                 )}
-                {masteredAudioUrl && (
+                {shouldShowMasteredAudio && (
                   <div className="bg-gray-700 p-4 rounded-md shadow-inner border border-gray-600">
                     <p className="text-lg font-semibold text-gray-200 mb-2">マスタリング済みオーディオ</p>
                     <audio controls src={masteredAudioUrl} className="w-full"></audio>
                     <p className="text-xs text-gray-500 mt-2">
                       ※バックエンドで生成された最新のマスタリング結果です。
                     </p>
+                  </div>
+                )}
+                {isMockedResult && (
+                  <div className="bg-gray-700 p-4 rounded-md shadow-inner border border-gray-600">
+                    <p className="text-lg font-semibold text-gray-200 mb-2 flex items-center gap-2">
+                      マスタリング済みオーディオ
+                      <span className="text-xs font-semibold text-red-300">表示不可</span>
+                    </p>
+                    <p className="text-sm text-gray-400">
+                      バックエンドマスタリングに失敗したため、モック結果のみ表示しています。オーディオ比較はできません。
+                    </p>
+                    {masteringMeta?.reason && (
+                      <p className="mt-2 text-xs text-gray-500">理由: {masteringMeta.reason}</p>
+                    )}
                   </div>
                 )}
               </div>

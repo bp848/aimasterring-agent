@@ -110,60 +110,67 @@ const AudioUploadAnalysis: React.FC<AudioUploadAnalysisProps> = ({ onAnalysisCom
   };
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex items-center justify-center min-h-[calc(100vh-80px)]">
-      <div className="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700 max-w-2xl w-full text-center">
-        <h2 className="text-3xl font-extrabold text-blue-300 mb-6">オーディオファイルを分析</h2>
+    <div className="bg-gray-800 p-6 rounded-2xl shadow-xl border border-gray-700 space-y-6">
+      <div className="flex flex-col gap-1">
+        <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Step 1</p>
+        <h2 className="text-2xl font-extrabold text-white">オーディオファイルを分析</h2>
+        <p className="text-sm text-gray-400">
+          32 MB 以下の WAV/AIFF をアップロードしてください。Cloud Run の制限を超えるとアップロードできません。
+        </p>
+      </div>
 
-        <div className="mb-8">
-          <label htmlFor="audio-upload" className="block text-gray-300 text-lg font-medium mb-3">
-            マスタリングしたいオーディオを選択してください
-          </label>
-          <input
-            id="audio-upload"
-            type="file"
-            accept="audio/*"
-            onChange={handleFileChange}
-            className="block w-full text-sm text-gray-500
-                       file:mr-4 file:py-2 file:px-4
-                       file:rounded-full file:border-0
-                       file:text-sm file:font-semibold
-                       file:bg-blue-50 file:text-blue-700
-                       hover:file:bg-blue-100 cursor-pointer"
-          />
-          {selectedFile && (
-            <p className="mt-4 text-gray-400 text-sm">選択中のファイル: <span className="font-semibold text-blue-300">{selectedFile.name}</span></p>
-          )}
-          {error && <p className="mt-4 text-red-400 text-sm">{error}</p>}
-        </div>
+      <div className="space-y-4">
+        <label htmlFor="audio-upload" className="block text-sm font-medium text-gray-200">
+          ソースファイル
+        </label>
+        <input
+          id="audio-upload"
+          type="file"
+          accept="audio/*"
+          onChange={handleFileChange}
+          className="block w-full text-sm text-gray-300
+                     file:mr-4 file:py-2 file:px-4
+                     file:rounded-full file:border-0
+                     file:text-sm file:font-semibold
+                     file:bg-blue-50 file:text-blue-800
+                     hover:file:bg-blue-100 cursor-pointer"
+        />
+        {selectedFile && (
+          <p className="text-xs text-gray-400">
+            選択中: <span className="font-semibold text-blue-300">{selectedFile.name}</span>{' '}
+            ({(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)
+          </p>
+        )}
+        {error && <p className="text-sm text-red-400">{error}</p>}
+      </div>
 
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button
           onClick={handleAnalyzeClick}
           disabled={!selectedFile || isLoading}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-full text-lg shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105"
+          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {isLoading ? (
-            <LoadingSpinner />
-          ) : (
-            'オーディオを分析'
-          )}
+          {isLoading ? <LoadingSpinner /> : 'オーディオを分析'}
         </button>
-
         {analysisResult && (
-          <div className="mt-10 pt-8 border-t border-gray-700">
-            <h3 className="text-2xl font-bold text-green-400 mb-6">初期分析結果:</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <MetricsDisplay label="現状（分析結果）" metrics={analysisResult} />
-                <MetricsDisplay label="目標（配信: streaming 想定）" metrics={TARGET_METRICS} />
-            </div>
-            <button
-              onClick={handleProceedToDashboard}
-              className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-full text-lg shadow-lg transition-all duration-300 transform hover:scale-105"
-            >
-              マスタリングダッシュボードに進む
-            </button>
-          </div>
+          <button
+            onClick={handleProceedToDashboard}
+            className="border border-green-400 text-green-300 px-4 py-2 rounded-lg text-sm hover:bg-green-400/10 transition"
+          >
+            ダッシュボードに進む
+          </button>
         )}
       </div>
+
+      {analysisResult && (
+        <div className="space-y-6 pt-4 border-t border-gray-700">
+          <h3 className="text-lg font-semibold text-green-300">初期分析結果</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <MetricsDisplay label="現状（分析結果）" metrics={analysisResult} />
+            <MetricsDisplay label="目標（配信: streaming 想定）" metrics={TARGET_METRICS} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
