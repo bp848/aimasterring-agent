@@ -51,6 +51,40 @@ const ALLOWED_EXTENSIONS = (process.env.ALLOWED_UPLOAD_EXTENSIONS ?? '.wav,.wave
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
+const metricsSchema = z.object({
+  lufs: z.number().nullable().optional(),
+  truePeak: z.number().nullable().optional(),
+  crest: z.number().nullable().optional(),
+});
+
+const masteringInputSchema = z.object({
+  platform: z.enum(['streaming', 'beatport', 'cd', 'youtube']),
+  currentMetrics: metricsSchema,
+  targetMetrics: metricsSchema,
+  promptSupplement: z.string().max(2000).optional(),
+});
+
+const masteringParametersSchema: z.ZodType<MasteringParameters> = z.object({
+  inputTrimDb: z.number(),
+  compThresholdDbfs: z.number(),
+  compRatio: z.number(),
+  compAttackMs: z.number(),
+  compReleaseMs: z.number(),
+  eqLowHz: z.number(),
+  eqLowDb: z.number(),
+  eqLowQ: z.number(),
+  eqHighHz: z.number(),
+  eqHighDb: z.number(),
+  eqHighQ: z.number(),
+  targetLufs: z.number(),
+  truePeak: z.number(),
+  limiterCeilingDb: z.number(),
+  limiterLookaheadMs: z.number(),
+  limiterReleaseMs: z.number(),
+  platform: z.enum(['streaming', 'beatport', 'cd', 'youtube']),
+  profileName: z.string(),
+});
+
 const pythonBinary = process.env.PYTHON_BIN ?? 'python3';
 const cliPath = path.join(cwd, 'python', 'mastering_cli.py');
 const jobStore = new Map<string, MasteringJob>();
@@ -236,7 +270,7 @@ app.post('/api/analyze', async (req, res) => {
 
 const masterRequestSchema = z.object({
   sourceUrl: sourceUrlSchema,
-  params: masteringParamsSchema,
+  params: masteringParametersSchema,
   originalFileName: z.string().optional(),
 });
 
@@ -286,40 +320,6 @@ app.get('/api/master/:jobId', (req, res) => {
   });
 });
 
-const metricsSchema = z.object({
-  lufs: z.number().nullable().optional(),
-  truePeak: z.number().nullable().optional(),
-  crest: z.number().nullable().optional(),
-});
-
-const masteringParamsSchema = z.object({
-  platform: z.enum(['streaming', 'beatport', 'cd', 'youtube']),
-  currentMetrics: metricsSchema,
-  targetMetrics: metricsSchema,
-  promptSupplement: z.string().max(2000).optional(),
-});
-
-const geminiResponseSchema = z.object({
-  inputTrimDb: z.number(),
-  compThresholdDbfs: z.number(),
-  compRatio: z.number(),
-  compAttackMs: z.number(),
-  compReleaseMs: z.number(),
-  eqLowHz: z.number(),
-  eqLowDb: z.number(),
-  eqLowQ: z.number(),
-  eqHighHz: z.number(),
-  eqHighDb: z.number(),
-  eqHighQ: z.number(),
-  targetLufs: z.number(),
-  truePeak: z.number(),
-  limiterCeilingDb: z.number(),
-  limiterLookaheadMs: z.number(),
-  limiterReleaseMs: z.number(),
-  platform: z.enum(['streaming', 'beatport', 'cd', 'youtube']),
-  profileName: z.string(),
-});
-
 const tokenBucket = createTokenBucket({
   capacity: Number(process.env.GEMINI_RATE_LIMIT ?? 8),
   refillIntervalMs: 60_000,
@@ -333,7 +333,7 @@ app.post('/api/mastering-params', async (req, res) => {
     return res.status(429).json({ error: 'Gemini API レートリミットに達しました。時間をおいて再試行してください。' });
   }
 
-  const parseResult = masteringParamsSchema.safeParse(req.body);
+  const parseResult = masteringInputSchema.safeParse(req.body);
   if (!parseResult.success) {
     return res.status(400).json({ error: 'リクエスト形式が不正です。', details: parseResult.error.flatten() });
   }
@@ -545,7 +545,7 @@ const SYSTEM_PROMPT = [
 
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
-const requestGeminiParameters = async (payload: z.infer<typeof masteringParamsSchema>): Promise<MasteringParameters> => {
+const requestGeminiParameters = async (payload: z.infer<typeof masteringInputSchema>): Promise<MasteringParameters> => {
   const body = {
     system_instruction: {
       parts: [{ text: SYSTEM_PROMPT }],
@@ -582,7 +582,7 @@ const requestGeminiParameters = async (payload: z.infer<typeof masteringParamsSc
       const cleaned = stripCodeFence(text);
 
       const jsonResult = JSON.parse(cleaned);
-      const parsed = geminiResponseSchema.parse(jsonResult);
+      const parsed = masteringParametersSchema.parse(jsonResult);
       return parsed;
     } catch (error) {
       lastError = error;
@@ -629,7 +629,7 @@ const stripCodeFence = (text: string): string => {
   return text.trim();
 };
 
-const buildUserPrompt = (payload: z.infer<typeof masteringParamsSchema>): string => {
+const buildUserPrompt = (payload: z.infer<typeof masteringInputSchema>): string => {
   const lines = [
     `Platform: ${payload.platform}`,
     `Current metrics: LUFS=${payload.currentMetrics.lufs ?? 'N/A'}, TruePeak=${payload.currentMetrics.truePeak ?? 'N/A'}, Crest=${payload.currentMetrics.crest ?? 'N/A'}`,
