@@ -30,6 +30,55 @@ export interface UseAiMasteringAgentResult {
   errorMessage: string | null;
 }
 
+const MAX_ERROR_LENGTH = 400;
+
+const formatBackendErrorMessage = (rawText: string | null | undefined, fallback: string): string => {
+  if (!rawText) {
+    return fallback;
+  }
+  const trimmed = rawText.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: string; details?: unknown };
+    const baseMessage = typeof parsed.error === 'string' ? parsed.error : fallback;
+    const detailMessage = parseErrorDetails(parsed.details);
+    if (detailMessage) {
+      return `${baseMessage} (${detailMessage})`;
+    }
+    return baseMessage;
+  } catch {
+    return trimmed.length > MAX_ERROR_LENGTH ? `${trimmed.slice(0, MAX_ERROR_LENGTH)}…` : trimmed;
+  }
+};
+
+const parseErrorDetails = (details: unknown): string | null => {
+  if (!details) {
+    return null;
+  }
+  if (typeof details === 'string') {
+    return details;
+  }
+  if (typeof details === 'object' && !Array.isArray(details)) {
+    const detailObj = details as Record<string, unknown>;
+    if (Array.isArray(detailObj.formErrors) && detailObj.formErrors.length > 0) {
+      const formErrors = detailObj.formErrors.filter((value): value is string => typeof value === 'string');
+      if (formErrors.length > 0) {
+        return formErrors.join(', ');
+      }
+    }
+    if (typeof detailObj.command === 'string') {
+      return detailObj.command;
+    }
+    if (typeof detailObj.message === 'string') {
+      return detailObj.message;
+    }
+  }
+  return null;
+};
+
 const MASTERING_PARAMS_ENDPOINT = import.meta.env.VITE_MASTERING_PARAMS_API_URL ?? '/api/mastering-params';
 const MASTERING_JOB_ENDPOINT = import.meta.env.VITE_MASTERING_API_URL ?? '/api/master';
 
@@ -124,7 +173,8 @@ const requestMasteringParametersFromBackend = async ({
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || 'Gemini パラメータAPI呼び出しに失敗しました。');
+    const message = formatBackendErrorMessage(text, 'Gemini パラメータAPI呼び出しに失敗しました。');
+    throw new Error(message);
   }
   const json = (await response.json()) as { params?: MasteringParameters };
   if (!json.params) {
@@ -166,7 +216,8 @@ const callMasteringBackend = async (
   });
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || 'マスタリングAPIへの接続に失敗しました。');
+    const message = formatBackendErrorMessage(errorText, 'マスタリングAPIへの接続に失敗しました。');
+    throw new Error(message);
   }
   const json = (await response.json()) as { jobId?: string };
   if (!json.jobId) {
@@ -198,7 +249,8 @@ const pollMasteringJob = async (statusUrl: string, onProgress?: (message: string
     const response = await fetch(statusUrl, { method: 'GET', cache: 'no-store' });
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || 'ジョブステータスの取得に失敗しました。');
+      const message = formatBackendErrorMessage(text, 'ジョブステータスの取得に失敗しました。');
+      throw new Error(message);
     }
     const job = (await response.json()) as MasteringJobStatus;
     if (job.status === 'completed') {
