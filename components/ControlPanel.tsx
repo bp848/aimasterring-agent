@@ -55,11 +55,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         platformId: 'streaming',
         sourceUrl,
       });
-      if (meta?.usedMockResult) {
-        onLog?.('error', 'バックエンドマスタリングに失敗したためモック結果を表示します。', meta.reason);
-      } else {
-        onLog?.('success', 'バックエンドマスタリングが正常に完了しました。');
-      }
       onMasteringComplete(params, finalMetrics, masteredUrl, meta);
     } catch (error) {
       console.error('Mastering simulation failed:', error);
